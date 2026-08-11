@@ -50,17 +50,17 @@ st.set_page_config(
 #
 # Replace every None below with your actual numbers before re-deploying.
 REDUCED_MODEL_METRICS = {
-    "validation_set":        None,   # e.g., "Internal test set (n = 196, 20% held out)"
-    "auc":                   None,   # e.g., 0.78
-    "auc_ci":                None,   # e.g., "0.71–0.85"
-    "brier_score":           None,   # e.g., 0.16
-    "calibration_slope":     None,   # e.g., 0.94
-    "calibration_intercept": None,   # e.g., -0.03
-    "threshold":             0.30,   # recommended operating threshold — justify in manuscript (e.g., Youden's J)
-    "sensitivity":           None,   # e.g., 0.81
-    "specificity":           None,   # e.g., 0.68
-    "ppv":                   None,   # e.g., 0.52
-    "npv":                   None,   # e.g., 0.90
+    "validation_set":        "Internal test set (n = 293, 30% held-out split)",
+    "auc":                   0.711,
+    "auc_ci":                "0.649–0.772",
+    "brier_score":           0.196,
+    "calibration_slope":     0.979,
+    "calibration_intercept": -0.664,
+    "threshold":             0.30,
+    "sensitivity":           0.887,
+    "specificity":           0.423,
+    "ppv":                   0.366,
+    "npv":                   0.909,
 }
 
 def _fmt(v, suffix=""):
@@ -153,25 +153,18 @@ st.markdown(
 )
 
 st.warning(
-    "**⚠️ Research tool — not a diagnostic device.** "
-    "This calculator is intended for research and educational use only. "
-    "It has not been approved by any regulatory authority for clinical "
-    "decision-making and must not be used, alone or in combination with "
-    "other information, to diagnose insomnia, to guide treatment, or to "
-    "replace clinical judgment. Predictions may be inaccurate for "
-    "individuals whose characteristics differ from the development/"
-    "validation cohort. If you or someone you know is struggling with "
-    "sleep, mood, or anxiety symptoms, please consult a qualified "
-    "clinician."
+    "**⚠️ For research and educational use only.** This tool is not a "
+    "diagnostic device and should not replace professional clinical "
+    "judgment. Please consult a qualified clinician for any sleep, mood, "
+    "or anxiety concerns."
 )
 
 with st.expander("📈 Reduced-model performance (6 sidebar inputs, remaining features at cohort median)", expanded=True):
     m = REDUCED_MODEL_METRICS
     st.caption(
-        "Metrics below describe this tool's actual deployment condition — "
-        "the 6 sidebar variables at their entered values, with the "
-        "remaining 12 model features fixed at population medians — "
-        "evaluated on: **" + (m["validation_set"] or "not yet reported") + "**."
+        "Metrics reflect this tool's actual input mode (6 sidebar variables "
+        "entered, remaining 12 fixed at population medians), evaluated on **"
+        + (m["validation_set"] or "not yet reported") + "**."
     )
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("AUC", _fmt(m["auc"]), help=f"95% CI: {_fmt(m['auc_ci'])}")
@@ -190,13 +183,6 @@ with st.expander("📈 Reduced-model performance (6 sidebar inputs, remaining fe
         f"**{m['threshold']:.2f}** predicted probability "
         "(sensitivity/specificity above are reported at this threshold)."
     )
-    if any(v is None for k, v in m.items() if k != "threshold"):
-        st.caption(
-            "🔧 *Placeholder values shown as “—” pending computation on the "
-            "held-out/validation set under the exact 6-input, median-imputed "
-            "condition described above.*"
-        )
-
 st.divider()
 
 # ─────────────────────────────────────────────────────────────
@@ -397,23 +383,10 @@ if predict_btn:
     with col_left:
         st.metric("Predicted Risk Probability", f"{prob:.1%}")
         if prob >= THRESH:
-            st.error(
-                f"⚠️ **Above threshold ({THRESH:.0%})** — flagged as elevated "
-                f"risk of moderate-to-severe insomnia in ASD "
-                f"(sensitivity {_fmt(REDUCED_MODEL_METRICS['sensitivity'])}, "
-                f"specificity {_fmt(REDUCED_MODEL_METRICS['specificity'])} "
-                f"at this threshold)."
-            )
+            st.error(f"⚠️ **Above the {THRESH:.0%} threshold** — flagged as elevated risk.")
         else:
-            st.success(
-                f"✅ **Below threshold ({THRESH:.0%})** — not flagged as "
-                f"elevated risk at this operating point."
-            )
-        st.caption(
-            "This classification is a research estimate, not a diagnosis. "
-            "See the performance panel above for this threshold's known "
-            "error rates before acting on this result."
-        )
+            st.success(f"✅ **Below the {THRESH:.0%} threshold** — not flagged as elevated risk.")
+        st.caption("A research estimate, not a diagnosis — see performance metrics above.")
 
         st.markdown("**Top-3 driving factors:**")
         top3 = np.argsort(np.abs(shap_vals))[-3:][::-1]
@@ -496,10 +469,7 @@ if predict_btn:
         }).sort_values("SHAP Value", key=abs, ascending=False).reset_index(drop=True)
         st.dataframe(df_shap, use_container_width=True)
 
-    st.caption(
-        "**Disclaimer:** For research/educational purposes only. Not a "
-        "substitute for professional clinical assessment or diagnosis."
-    )
+    st.caption("For research/educational use only — not a substitute for clinical assessment.")
 
 else:
     # 未点击时的说明页
@@ -536,18 +506,11 @@ else:
 ### About the model
 - **Algorithm**: Logistic Regression with LASSO feature selection
 - **Target**: Moderate-to-severe insomnia (ISI ≥ 15)
-- **Population**: Adults diagnosed with **Autism Spectrum Disorder (ASD)**
-- **Sample size**: 976 participants
-- **Outcome prevalence**: 27.2% moderate-to-severe insomnia
-- **Remaining 12 features** (not shown above) are fixed at population median values
-- **Reduced-model (this deployment) performance**: AUC {_fmt(m['auc'])} (95% CI {_fmt(m['auc_ci'])}),
-  sensitivity {_fmt(m['sensitivity'])} / specificity {_fmt(m['specificity'])} at a {m['threshold']:.0%} threshold,
-  evaluated on {m['validation_set'] or "—"}. See the performance panel above for full detail.
+- **Population**: Adults with **Autism Spectrum Disorder (ASD)**, n = 976 (27.2% prevalence)
+- **Remaining 12 features** are fixed at population median values
+- **This deployment's performance**: AUC {_fmt(m['auc'])} (95% CI {_fmt(m['auc_ci'])}),
+  sensitivity {_fmt(m['sensitivity'])} / specificity {_fmt(m['specificity'])} at a {m['threshold']:.0%} threshold
+  — see the panel above for full detail.
 
-### Intended use
-This tool is a **research prototype** for illustrating model behavior and
-feature contributions. It is **not validated for, and must not be used
-for, clinical diagnosis or treatment decisions**. Predicted probabilities
-reflect the development cohort and may not generalize to other
-populations or settings.
+For research and educational use only; not a substitute for clinical assessment.
     """)
