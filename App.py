@@ -28,6 +28,45 @@ st.set_page_config(
 )
 
 # ─────────────────────────────────────────────────────────────
+# ⚠️ REDUCED-MODEL (6-INPUT / 12-MEDIAN-IMPUTED) PERFORMANCE
+# ─────────────────────────────────────────────────────────────
+# These MUST be computed on your held-out test / external validation set
+# using the SAME deployment condition as this app: the 6 sidebar features
+# take their real values, and the other 12 LASSO_FEATURES are forced to
+# FEATURE_MEDIANS below (exactly as run_prediction() does). Do NOT reuse
+# the full-model (all-18-real-features) metrics from the manuscript here —
+# they will not match what a website user actually experiences, and this
+# is precisely the gap the reviewer flagged.
+#
+# Recommended workflow to fill these in:
+#   1. Take your test/validation set.
+#   2. For each row, keep only the 6 sidebar variables; overwrite the
+#      other 12 columns with FEATURE_MEDIANS.
+#   3. Run predict_proba() through the saved pipeline.
+#   4. Compute AUC (+ 95% CI via bootstrap), calibration slope/intercept
+#      (or a calibration plot), and sensitivity/specificity/PPV/NPV at
+#      your chosen threshold (e.g., Youden's J, or a clinically motivated
+#      cutoff prioritizing sensitivity given the vulnerable population).
+#
+# Replace every None below with your actual numbers before re-deploying.
+REDUCED_MODEL_METRICS = {
+    "validation_set":        None,   # e.g., "Internal test set (n = 196, 20% held out)"
+    "auc":                   None,   # e.g., 0.78
+    "auc_ci":                None,   # e.g., "0.71–0.85"
+    "brier_score":           None,   # e.g., 0.16
+    "calibration_slope":     None,   # e.g., 0.94
+    "calibration_intercept": None,   # e.g., -0.03
+    "threshold":             0.30,   # recommended operating threshold — justify in manuscript (e.g., Youden's J)
+    "sensitivity":           None,   # e.g., 0.81
+    "specificity":           None,   # e.g., 0.68
+    "ppv":                   None,   # e.g., 0.52
+    "npv":                   None,   # e.g., 0.90
+}
+
+def _fmt(v, suffix=""):
+    return "—" if v is None else f"{v}{suffix}"
+
+# ─────────────────────────────────────────────────────────────
 # 特征配置
 # ─────────────────────────────────────────────────────────────
 LASSO_FEATURES = [
@@ -103,7 +142,7 @@ if pipeline is None:
     st.stop()
 
 # ─────────────────────────────────────────────────────────────
-# 标题
+# 标题 + 非诊断免责声明（顶部，始终可见）
 # ─────────────────────────────────────────────────────────────
 st.title("🌙 Sleep Difficulty Risk Predictor in ASD")
 st.markdown(
@@ -112,6 +151,52 @@ st.markdown(
     "in individuals with **Autism Spectrum Disorder (ASD)**, "
     "and explain key contributing factors via SHAP."
 )
+
+st.warning(
+    "**⚠️ Research tool — not a diagnostic device.** "
+    "This calculator is intended for research and educational use only. "
+    "It has not been approved by any regulatory authority for clinical "
+    "decision-making and must not be used, alone or in combination with "
+    "other information, to diagnose insomnia, to guide treatment, or to "
+    "replace clinical judgment. Predictions may be inaccurate for "
+    "individuals whose characteristics differ from the development/"
+    "validation cohort. If you or someone you know is struggling with "
+    "sleep, mood, or anxiety symptoms, please consult a qualified "
+    "clinician."
+)
+
+with st.expander("📈 Reduced-model performance (6 sidebar inputs, remaining features at cohort median)", expanded=True):
+    m = REDUCED_MODEL_METRICS
+    st.caption(
+        "Metrics below describe this tool's actual deployment condition — "
+        "the 6 sidebar variables at their entered values, with the "
+        "remaining 12 model features fixed at population medians — "
+        "evaluated on: **" + (m["validation_set"] or "not yet reported") + "**."
+    )
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("AUC", _fmt(m["auc"]), help=f"95% CI: {_fmt(m['auc_ci'])}")
+    c2.metric("Brier score", _fmt(m["brier_score"]))
+    c3.metric("Calibration slope", _fmt(m["calibration_slope"]))
+    c4.metric("Calibration intercept", _fmt(m["calibration_intercept"]))
+
+    c5, c6, c7, c8 = st.columns(4)
+    c5.metric("Sensitivity", _fmt(m["sensitivity"]))
+    c6.metric("Specificity", _fmt(m["specificity"]))
+    c7.metric("PPV", _fmt(m["ppv"]))
+    c8.metric("NPV", _fmt(m["npv"]))
+
+    st.caption(
+        f"Operating threshold for risk classification below: "
+        f"**{m['threshold']:.2f}** predicted probability "
+        "(sensitivity/specificity above are reported at this threshold)."
+    )
+    if any(v is None for k, v in m.items() if k != "threshold"):
+        st.caption(
+            "🔧 *Placeholder values shown as “—” pending computation on the "
+            "held-out/validation set under the exact 6-input, median-imputed "
+            "condition described above.*"
+        )
+
 st.divider()
 
 # ─────────────────────────────────────────────────────────────
@@ -304,17 +389,31 @@ if predict_btn:
     with st.spinner("Computing prediction and SHAP values…"):
         prob, shap_vals, base_val, row_t = run_prediction(input_values)
 
+    THRESH = REDUCED_MODEL_METRICS["threshold"]
+
     # ── 风险结果区 ────────────────────────────────────────────
     col_left, col_right = st.columns([1, 2])
 
     with col_left:
         st.metric("Predicted Risk Probability", f"{prob:.1%}")
-        if prob >= 0.5:
-            st.error("⚠️ **High risk** of moderate-to-severe insomnia in ASD")
-        elif prob >= 0.3:
-            st.warning("🟡 **Moderate risk** – consider clinical follow-up")
+        if prob >= THRESH:
+            st.error(
+                f"⚠️ **Above threshold ({THRESH:.0%})** — flagged as elevated "
+                f"risk of moderate-to-severe insomnia in ASD "
+                f"(sensitivity {_fmt(REDUCED_MODEL_METRICS['sensitivity'])}, "
+                f"specificity {_fmt(REDUCED_MODEL_METRICS['specificity'])} "
+                f"at this threshold)."
+            )
         else:
-            st.success("✅ **Low risk** of moderate-to-severe insomnia")
+            st.success(
+                f"✅ **Below threshold ({THRESH:.0%})** — not flagged as "
+                f"elevated risk at this operating point."
+            )
+        st.caption(
+            "This classification is a research estimate, not a diagnosis. "
+            "See the performance panel above for this threshold's known "
+            "error rates before acting on this result."
+        )
 
         st.markdown("**Top-3 driving factors:**")
         top3 = np.argsort(np.abs(shap_vals))[-3:][::-1]
@@ -329,19 +428,15 @@ if predict_btn:
         # 进度条风险仪表
         fig_g, ax_g = plt.subplots(figsize=(6, 1.4))
         ax_g.barh(0, 1.0, color="#eeeeee", height=0.5)
-        bar_color = (
-            "#E83B3B" if prob >= 0.5 else
-            "#F5A623" if prob >= 0.3 else
-            "#27AE60"
-        )
+        bar_color = "#E83B3B" if prob >= THRESH else "#27AE60"
         ax_g.barh(0, prob, color=bar_color, height=0.5)
-        ax_g.axvline(0.5, color="#555555", linewidth=1.5, linestyle="--")
+        ax_g.axvline(THRESH, color="#555555", linewidth=1.5, linestyle="--")
         ax_g.text(
             min(prob + 0.02, 0.95), 0,
             f"{prob:.1%}",
             va="center", fontsize=14, fontweight="bold", color=bar_color
         )
-        ax_g.text(0.5, -0.42, "50% threshold",
+        ax_g.text(THRESH, -0.42, f"{THRESH:.0%} threshold",
                   ha="center", fontsize=9, color="#555")
         ax_g.set_xlim(0, 1)
         ax_g.set_yticks([])
@@ -401,6 +496,11 @@ if predict_btn:
         }).sort_values("SHAP Value", key=abs, ascending=False).reset_index(drop=True)
         st.dataframe(df_shap, use_container_width=True)
 
+    st.caption(
+        "**Disclaimer:** For research/educational purposes only. Not a "
+        "substitute for professional clinical assessment or diagnosis."
+    )
+
 else:
     # 未点击时的说明页
     st.info(
@@ -430,13 +530,24 @@ else:
 | Gender | Male / Female |
         """)
 
-    st.markdown("""
+    m = REDUCED_MODEL_METRICS
+    st.markdown(f"""
 ---
 ### About the model
-- **Algorithm**: Logistic Regression with LASSO feature selection  
-- **Target**: Moderate-to-severe insomnia (ISI ≥ 15)  
-- **Population**: Adults diagnosed with **Autism Spectrum Disorder (ASD)**  
-- **Sample size**: 976 participants  
-- **Outcome prevalence**: 27.2% moderate-to-severe insomnia  
+- **Algorithm**: Logistic Regression with LASSO feature selection
+- **Target**: Moderate-to-severe insomnia (ISI ≥ 15)
+- **Population**: Adults diagnosed with **Autism Spectrum Disorder (ASD)**
+- **Sample size**: 976 participants
+- **Outcome prevalence**: 27.2% moderate-to-severe insomnia
 - **Remaining 12 features** (not shown above) are fixed at population median values
+- **Reduced-model (this deployment) performance**: AUC {_fmt(m['auc'])} (95% CI {_fmt(m['auc_ci'])}),
+  sensitivity {_fmt(m['sensitivity'])} / specificity {_fmt(m['specificity'])} at a {m['threshold']:.0%} threshold,
+  evaluated on {m['validation_set'] or "—"}. See the performance panel above for full detail.
+
+### Intended use
+This tool is a **research prototype** for illustrating model behavior and
+feature contributions. It is **not validated for, and must not be used
+for, clinical diagnosis or treatment decisions**. Predicted probabilities
+reflect the development cohort and may not generalize to other
+populations or settings.
     """)
