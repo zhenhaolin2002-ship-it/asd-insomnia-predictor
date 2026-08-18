@@ -56,11 +56,11 @@ REDUCED_MODEL_METRICS = {
     "brier_score":           0.196,
     "calibration_slope":     0.979,
     "calibration_intercept": -0.664,
-    "threshold":             0.30,
-    "sensitivity":           0.887,
-    "specificity":           0.423,
-    "ppv":                   0.366,
-    "npv":                   0.909,
+    "threshold":             0.437,  # Youden's J-optimal threshold, derived on the training set
+    "sensitivity":           0.637,
+    "specificity":           0.690,
+    "ppv":                   0.436,
+    "npv":                   0.835,
 }
 
 def _fmt(v, suffix=""):
